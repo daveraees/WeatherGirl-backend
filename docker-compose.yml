@@ -1,0 +1,21 @@
+version: '3.7'
+services:
+ server:
+  build:
+    context: ./ # build from another directory
+    dockerfile: ./Dockerfile
+  image: wg_backend:latest
+  container_name: flaskapp
+  restart: always
+  environment:
+    WG_QUERY_SECRET: ${WG_QUERY_SECRET}
+    WG_REMOTE_DATA_STORE: ${WG_REMOTE_DATA_STORE}
+    WG_CONFIG_PATH: ${WG_CONFIG_PATH}
+    WG_LOCAL_DATA_STORE: /app/data # this is different during local testing
+    WG_DATABASE_ENDPOINT: ${WG_DATABASE_ENDPOINT}
+    WG_DATABASE_PORT: ${WG_DATABASE_PORT}
+    WG_DATABASE_NAME: ${WG_DATABASE_NAME}
+    WG_DATABASE_USER: ${WG_DATABASE_USER}
+    WG_DATABASE_PASS: ${WG_DATABASE_PASS}
+
+

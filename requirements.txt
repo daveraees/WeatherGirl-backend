@@ -1,0 +1,15 @@
+ # requirements.txt
+ #
+ # installs dependencies from ./setup.py, and the package itself,
+ # in editable mode
+ #-e .
+pandas==1.1.3
+datetime==4.3
+sqlalchemy>=1.3
+pymysql>=0.10
+urllib3>=1.25
+
+
+ # (the -e above is optional). you could also just install the package
+ # normally with just the line below (after uncommenting)
+ # .
