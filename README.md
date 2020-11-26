@@ -38,7 +38,7 @@ Before running the app locally from source code, or in a container, please make 
 
 running the web server locally from the source code in the root directory of the local git repository:
 
-        $ python3 ./app/app.py
+        $ python3 ./app/wg.py
 
 The files docker-compose.yml and Dockerfile contain instructions needed to build a docker image.
 
