@@ -5,11 +5,13 @@ services:
     context: ./ # build from another directory
     dockerfile: ./Dockerfile
   image: wg_backend:latest
-  container_name: flaskapp
+  container_name: wg_backend
   restart: always
   environment:
     WG_QUERY_SECRET: ${WG_QUERY_SECRET}
-    WG_REMOTE_DATA_STORE: ${WG_REMOTE_DATA_STORE}
+    AWS_ACCESS_KEY_ID: ${WG_AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${WG_AWS_SECRET_ACCESS_KEY}
+    WG_S3BUCKET_NAME: ${WG_S3BUCKET_NAME}
     WG_CONFIG_PATH: ${WG_CONFIG_PATH}
     WG_LOCAL_DATA_STORE: /app/data # this is different during local testing
     WG_DATABASE_ENDPOINT: ${WG_DATABASE_ENDPOINT}

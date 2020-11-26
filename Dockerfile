@@ -7,6 +7,7 @@ RUN apt-get update -y && \
 
 COPY ./requirements.txt /requirements.txt
 
+
 WORKDIR /
 
 RUN pip3 install --upgrade pip

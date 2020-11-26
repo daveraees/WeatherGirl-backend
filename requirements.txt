@@ -8,7 +8,7 @@ datetime==4.3
 sqlalchemy>=1.3
 pymysql>=0.10
 urllib3>=1.25
-
+boto3==1.16.17
 
  # (the -e above is optional). you could also just install the package
  # normally with just the line below (after uncommenting)

@@ -1,10 +1,15 @@
 import os
+import io
 import sys
 import pathlib
 import datetime as dt
 import urllib.request, urllib.error
 import json, gzip
+import logging
 
+from botocore.exceptions import ClientError
+
+# before testin in cloud uncomment this line and also the lines in dnl_weather_records
 from db_access import engine, dbmodel, format_SQLtable_name, table_exists, create_new_table, insert_into_table
 
 def extract_json_data(jsonfilename):
@@ -13,19 +18,53 @@ def extract_json_data(jsonfilename):
         data = [json.loads(line,encoding='utf-8') for line in fin.readlines()]
         #data = json.loads(fin.read().decode('utf-8'),encoding='utf-8')
     return data
-def get_dict_from_json_gzip_http(record_fname):
+
+def download_jsongz_data(s3engine, bucket_name, object_name):
+    """retrieve data form a object in the S3 bucket
+    inputs: bot3.client('s3') instance
+    :param file_name: File to upload
+    :param bucket: Bucket name to upload to
+    :param object_name: S3 object name. 
+    :return: True if file was uploaded, else False
     """
-    retrieves stored gzipped file from S3  
-    """
+
+    # Download the file
     try:
-        with urllib.request.urlopen(record_fname) as jf_gz:
-            with gzip.open(jf_gz, 'r') as jf:
-                data = json.loads(jf.read(),encoding='utf-8') 
-    #except urllib.error.HTTPError as err:
-    except:
+        with  io.BytesIO() as f:
+            response = s3engine.download_fileobj(bucket_name, object_name,f)
+            print (response)
+            f.seek(0, 0)
+            with gzip.open(f, 'r') as jf:
+                data = json.loads(jf.read(),encoding='utf-8')
+        
+    except ClientError as e:
+        logging.error(e)
         data = None
     return data
-def save_appconfig(filename, config):
+def upload_jsongz_data(s3engine, bucket_name, object_name, data):
+    """
+    helper for uploading the JSON serialized python objects to the S3 server
+    inputs : 
+    S3engine: instance of boto3.client
+    object_name: what should be the filename of the serialized object on the server
+    
+    returns:
+    None
+    """
+    
+    #remote_link  = "https://muyavskybleu.s3.amazonaws.com/config/test_config.json.gz"
+    
+    try:
+        data_json = gzip.compress (json.dumps(data).encode('utf-8'))
+        with io.BytesIO(data_json) as f:
+            s3engine.upload_fileobj(f, bucket_name, object_name)
+    except ClientError as e:
+        logging.error(e)
+
+    return 
+
+
+def save_appconfig(S3engine,filename, config):
     """
     helper for saving the app config
     inputs : 
@@ -37,20 +76,12 @@ def save_appconfig(filename, config):
     """
     
     remote_link  = os.environ['WG_CONFIG_PATH']
+    kyblik = os.environ['WG_S3BUCKET_NAME']
     print('saving config to file:', remote_link)
-    data_json = gzip.compress (json.dumps(config).encode('utf-8'))
-    req = urllib.request.Request(url=remote_link, data=data_json,method='PUT')
-    with urllib.request.urlopen(req) as f:
-        pass
+    upload_jsongz_data(S3engine, bucket_name=kyblik, object_name=remote_link, data=config)
     return
 
-    #data_json = json.dumps(config)
-    #with gzip.GzipFile(jsonfilename, 'r') as fin
-    #with open(filename,'w') as cfile:
-    #    cfile.write(data_json)
-    return
-
-def load_appconfig(filename, config=None):
+def load_appconfig(S3engine,filename, config=None):
     """
     helper for loading the app config
     loads the dictionary from the file and updates a config, or creates new config
@@ -61,8 +92,9 @@ def load_appconfig(filename, config=None):
     returns:
     None
     """
-    new_config = get_dict_from_json_gzip_http(filename)
-    
+    remote_link  = os.environ['WG_CONFIG_PATH']
+    kyblik = os.environ['WG_S3BUCKET_NAME']
+    new_config=download_jsongz_data(S3engine, bucket_name=kyblik, object_name=remote_link)
     if type(config) == type(None):
             response = new_config
     else:
@@ -70,7 +102,7 @@ def load_appconfig(filename, config=None):
         response = None
     return response
 
-def init_config_file(local_data_folder, config_path, count_limit=3):
+def init_config_file(S3engine, local_data_folder, config_path, count_limit=3):
     # setup the application configuration
     config = dict()
     
@@ -79,8 +111,7 @@ def init_config_file(local_data_folder, config_path, count_limit=3):
     country_retireve = 'CZ' # download data for cities in this country
 
     config['DATA_STORE'] = DATA_STORE
-    config['WG_REMOTE_DATA_STORE'] = os.environ['WG_REMOTE_DATA_STORE'] # this will point to the AWS S3 
-
+    
     config['OPENWEATHER_ONECALL_URL'] = 'https://api.openweathermap.org/data/2.5/onecall?'
     config['OPENWEATHER_QUERY'] = {'lat':None,
                                       'lon':None,
@@ -100,7 +131,7 @@ def init_config_file(local_data_folder, config_path, count_limit=3):
             city['retrieve'] = False
 
     # save the config in a json file
-    save_appconfig(config_path,config)
+    save_appconfig(S3engine,config_path,config)
     return
 
 def get_city_latlon (city,country,city_list):
@@ -133,32 +164,18 @@ def retrieve_weather_info(queryS,local_data_folder='data'):
     local_filename, headers = urllib.request.urlretrieve(queryS,filename=(local_data_folder+'/temp.json'))
     return local_filename, headers
 
-def store_new_record(data, headers,  appconfig):
+
+def store_new_record_api(S3engine,data, headers,  appconfig):
     """
-    write the data to new JSON file locally
+    PUT the weather records to a server
     """
-    remote_data_folder = appconfig['WG_REMOTE_DATA_STORE']
+    kyblik = os.environ['WG_S3BUCKET_NAME']
+    
     remote_filename = headers['data_storage_link']
-    storage_location = os.path.join(remote_data_folder,remote_filename)
-                
-    data_json = json.dumps(data) 
-    with open(storage_location,'a') as wfile:
-        wfile.writelines(data_json)
-        wfile.write('\n')
+    print("uploading:" ,kyblik, remote_filename)
+    upload_jsongz_data(S3engine, bucket_name=kyblik, object_name=remote_filename, data=data)
     return
-def store_new_record_http(data, headers,  appconfig):
-    """
-    PUT all the records to a server
-    """
-    http_server = appconfig['WG_REMOTE_DATA_STORE']
-    remote_filename = headers['data_storage_link']
-    remote_link  = urllib.parse.urljoin(http_server,remote_filename)
-    print(remote_link)
-    data_json = bytes (json.dumps(data),encoding='utf-8')
-    req = urllib.request.Request(url=remote_link, data=data_json,method='PUT')
-    with urllib.request.urlopen(req) as f:
-        pass
-    return
+
 def retrieve_weather_info(queryS,local_data_folder='data'):
     local_filename, headers = urllib.request.urlretrieve(queryS,filename=(local_data_folder+'/temp.json'))
     return local_filename, headers
@@ -205,7 +222,7 @@ def read_record_data (json_filename):
 def storage_file_name (headers):
     timestampS = headers['timestamp']
     X_Cache_Key = headers['X-Cache-Key']
-    remote_filename = 'weather-' + '_'.join(headers['X-Cache-Key'].split('?')[1].split('&')) + '_TS=' + timestampS + '.json'        
+    remote_filename = 'weather-' + '_'.join(headers['X-Cache-Key'].split('?')[1].split('&')) + '_TS=' + timestampS + '.json.gz'        
     return remote_filename
 
 
@@ -225,7 +242,7 @@ def format_SQLtable_name(coord,units='metric'):
     table_name = "_".join(('lat_%s_lon_%s_%s' % (lat_str,lon_str,units)).split('.'))
     return table_name
 
-def dnl_weather_records (appconfig):
+def dnl_weather_records (S3engine,appconfig):
     for item in appconfig['CITY_LIST']:
         if item['retrieve']:
             headers, temp_filename = retrieve_new_info_by_coord (coord_dict=item['coord'],appconfig=appconfig)
@@ -237,12 +254,14 @@ def dnl_weather_records (appconfig):
             headers['data_storage_link'] = storage_file_name(headers) 
             
             # write the record to the database
-            #table_name = format_SQLtable_name(item['coord'])
+            table_name = format_SQLtable_name(item['coord'])
             if table_exists(engine,item['coord']):
                 insert_into_table(engine,record=headers,coord=item['coord'])
+                pass
             else:
                 create_new_table(engine,record=headers,coord=item['coord'])
-            store_new_record_http(data, headers, appconfig)
+                pass
+            store_new_record_api(S3engine,data, headers, appconfig)
     return
 
 
